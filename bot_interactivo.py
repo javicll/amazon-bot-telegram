@@ -185,4 +185,62 @@ def verificar_ofertas_amazon():
                     try:
                         resp = requests.get(url_prod, headers=HEADERS)
                         if resp.status_code == 200:
-                            s = BeautifulSoup(
+                            s = BeautifulSoup(resp.text, 'html.parser')
+                            
+                            p_entero = s.find("span", class_="a-price-whole")
+                            p_decimal = s.find("span", class_="a-price-fraction")
+                            
+                            if p_entero:
+                                ent = p_entero.text.replace(".", "").replace(",", "").strip()
+                                dec = p_decimal.text.strip() if p_decimal else "00"
+                                precio_actual = float(f"{ent}.{dec}")
+                                
+                                precio_original = None
+                                elem_orig = s.find("span", class_="a-text-price")
+                                if elem_orig:
+                                    span_off = elem_orig.find("span", class_="a-offscreen")
+                                    if span_off:
+                                        t_orig = span_off.text.replace("€", "").replace(".", "").replace(",", ".").strip()
+                                        try:
+                                            precio_original = float(t_orig)
+                                        except ValueError:
+                                            pass
+                                
+                                if precio_actual <= conf["precio_max"]:
+                                    if precio_original and precio_original > precio_actual:
+                                        descuento = 100 - (precio_actual * 100 / precio_original)
+                                        
+                                        if descuento >= conf["descuento"]:
+                                            mensaje = (
+                                                f"🚨 ¡CHOLLO NUEVO ENCONTRADO! 🚨\n\n"
+                                                f"• Categoría: {conf['categoria']}\n"
+                                                f"• Marca: {conf['marca']}\n"
+                                                f"• Descuento: **{descuento:.1f}%**\n"
+                                                f"• Precio actual: **{precio_actual} €**\n"
+                                                f"• Precio original: {precio_original} €\n\n"
+                                                f"👉 [Ver chollo en Amazon]({url_prod})"
+                                            )
+                                            bot.send_message(chat_id, mensaje, parse_mode="Markdown")
+                                            print(f"¡Alerta enviada a Telegram y registrado como ya notificado ({asin})!")
+                                            
+                                            productos_ya_enviados.add(asin)
+                                            
+                        time.sleep(2)
+                    except Exception as e:
+                        print(f"Error analizando producto individual: {e}")
+                        
+        # 900 segundos = 15 minutos exactos
+        time.sleep(900)
+
+# Arrancar el hilo en segundo plano
+hilo_rastreo = threading.Thread(target=verificar_ofertas_amazon, daemon=True)
+hilo_rastreo.start()
+
+# Arrancar el bot con protección
+if __name__ == "__main__":
+    try:
+        print("Bot configurado para buscar cada 15 min en marcha...")
+        bot.infinity_polling()
+    except Exception as e:
+        print(f"❌ El bot se ha detenido por un error: {e}")
+        input("Pulsa Intro para salir...")
